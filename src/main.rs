@@ -1,7 +1,13 @@
 use clap::{App, Arg};
-use std::process::Command;
-use std::string::FromUtf8Error;
 use std::{thread, time};
+
+mod command;
+mod format_output;
+mod terminal_utils;
+
+pub use crate::command::output_command;
+pub use crate::format_output::format_output;
+pub use crate::terminal_utils::clear_screen;
 
 fn main() {
     let matches = App::new("watch")
@@ -16,6 +22,14 @@ fn main() {
                 .default_value("2")
                 .about("Interval between function calls")
                 .takes_value(true),
+        )
+        .arg(
+            Arg::new("differences")
+                .short('d')
+                .long("differences")
+                .value_name("differences")
+                .about("Highlights changes")
+                .takes_value(false),
         )
         .arg(
             Arg::new("command")
@@ -36,37 +50,23 @@ fn main() {
     let interval: u64 = (matches.value_of("interval").unwrap())
         .parse::<u64>()
         .unwrap();
+    let differences: bool = matches.is_present("differences");
+
     let command_complete = command.join(" ");
 
+    let mut previous_output = String::new();
+
     loop {
-        match output_command(&command) {
-            Ok(output) => format_output(&output, &command_complete, interval),
-            Err(why) => format_output(
-                &format!("Error reading output: {}", why),
-                &command_complete,
-                interval,
-            ),
-        }
+        let output = output_command(&command);
+        format_output(
+            &output,
+            &previous_output,
+            &command_complete,
+            interval,
+            differences,
+        );
+        previous_output.clear();
+        previous_output.push_str(&output);
         thread::sleep(time::Duration::from_secs(interval));
     }
-}
-
-fn format_output(output: &String, command_complete: &String, interval: u64) {
-    print!("\x1B[2J\x1B[1;1H");
-
-    println!(
-        "Executing command: \"{}\" every {} seconds",
-        command_complete, interval
-    );
-    println!("");
-    println!("{}", output)
-}
-
-fn output_command(command: &Vec<String>) -> Result<String, FromUtf8Error> {
-    let output = Command::new("powershell")
-        .arg("-Command")
-        .args(command)
-        .output()
-        .expect("failed to execute process");
-    return String::from_utf8(output.stdout);
 }
